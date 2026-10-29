@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pocket Universe</title>
+    <meta name="description" content="Interactive quantum electrodynamics on a tiny lattice: watch particles appear from nothing and electric strings snap." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%2210%22 fill=%22%23ff9d3c%22/%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%224%22 fill=%22%23fff%22/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <header class="brand">
+      <h1>Pocket Universe</h1>
+      <p>Quantum electrodynamics, solved exactly on a tiny grid</p>
+    </header>
+
+    <aside class="panel" id="panel">
+      <nav class="scenarios" id="scenarios"></nav>
+      <section class="story">
+        <h2 id="title"></h2>
+        <p class="tagline" id="tagline"></p>
+        <div id="story"></div>
+      </section>
+      <section class="controls">
+        <label class="field">
+          <span>Universe</span>
+          <select id="lattice"></select>
+        </label>
+        <label class="field slider">
+          <span>Strength of the electric force <b id="g-val"></b></span>
+          <input id="g" type="range" min="0.4" max="3" step="0.05" />
+        </label>
+        <label class="field slider">
+          <span>Particle mass <b id="m-val"></b></span>
+          <input id="m" type="range" min="-1" max="1.5" step="0.05" />
+        </label>
+        <details class="nerd">
+          <summary>For physicists</summary>
+          <p>
+            2+1D Kogut–Susskind U(1) lattice gauge theory with two-component Wilson fermions and a spin-1 (|E| ≤ 1)
+            truncation of the links. Gauss's law is solved exactly: only gauge-invariant states are ever built.
+          </p>
+          <p class="formula">
+            H = (m + d·r) Σ ψ̄ψ + g²/2 Σ E² − 1/(2g²) Σ (U<sub>□</sub> + h.c.) − ½ Σ ψ̄(r − iγ<sub>k</sub>)U ψ + h.c.
+          </p>
+          <label class="field slider">
+            <span>Wilson parameter r <b id="r-val"></b></span>
+            <input id="r" type="range" min="0" max="1" step="0.05" />
+          </label>
+          <dl class="nerd-stats" id="nerd-stats"></dl>
+        </details>
+      </section>
+    </aside>
+
+    <aside class="legend" id="legend">
+      <div><i class="dot particle"></i>particle (+ charge)</div>
+      <div><i class="dot anti"></i>antiparticle (− charge)</div>
+      <div><i class="spark"></i>electric field, flowing + → −</div>
+      <div><i class="square"></i>magnetic field</div>
+      <div><i class="gem"></i>heavy fixed charge</div>
+      <div class="view-toggle" id="view-toggle">
+        <button data-view="torus" class="on">Doughnut</button>
+        <button data-view="flat">Flat</button>
+      </div>
+    </aside>
+
+    <section class="dock" id="dock">
+      <div class="transport" id="transport">
+        <button id="play" class="play" aria-label="Play">▶</button>
+        <input id="scrub" type="range" min="0" max="1" step="0.001" value="0" aria-label="Time" />
+        <span id="clock" class="clock">t = 0.0</span>
+        <select id="speed" aria-label="Playback speed">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+        </select>
+      </div>
+      <div class="dock-row">
+        <div class="tiles" id="tiles"></div>
+        <div class="look">
+          <button id="look" class="look-btn">👁 Look</button>
+          <label class="keep"><input id="keep-looking" type="checkbox" /> keep looking</label>
+          <p id="look-caption" class="look-caption"></p>
+        </div>
+      </div>
+      <div id="chart" class="chart-host"></div>
+    </section>
+
+    <div id="status" class="status"></div>
+    <div id="site-tip" class="site-tip"></div>
+
+    <div class="intro" id="intro">
+      <div class="intro-card">
+        <h2>A universe you can hold</h2>
+        <p>
+          Every glowing dot is a point in space. Between them run electric field lines. The rules are those of
+          <b>quantum electrodynamics</b>, the theory of light and electrons. Here they are solved
+          <em>exactly</em>, with no approximations, on a grid small enough to fit in your browser.
+        </p>
+        <p>Pick a story on the left, drag to rotate, scroll to zoom.</p>
+        <button id="intro-go">Enter</button>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
