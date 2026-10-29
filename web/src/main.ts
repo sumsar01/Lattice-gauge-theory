@@ -44,15 +44,21 @@ const sum = (a: Float64Array) => a.reduce((x, y) => x + y, 0);
 
 // --- worker -----------------------------------------------------------------
 
+let sceneKey = '';
+
 function run() {
   const sc = state.scenario;
   const spec = sc.lattices[state.latticeIdx].spec;
-  state.lattice = buildLattice(spec);
   state.runId++;
   state.frames = [];
   state.totalFrames = 0;
   state.playT = 0;
-  scene.setLattice(state.lattice, Int8Array.from(state.charges), state.view);
+  const key = JSON.stringify([spec, state.charges]);
+  if (key !== sceneKey) {
+    sceneKey = key;
+    state.lattice = buildLattice(spec);
+    scene.setLattice(state.lattice, Int8Array.from(state.charges), state.view);
+  }
   scene.showSnapshot(null);
   chart.reset(sc.tMax || 1);
   $('look-caption').textContent = '';
@@ -143,9 +149,10 @@ function tick(now: number) {
   const sc = state.scenario;
   if (sc.tMax > 0 && state.frames.length) {
     const available = state.frames[state.frames.length - 1].t;
+    const complete = state.frames.length === state.totalFrames;
     if (state.playing) {
       state.playT = Math.min(state.playT + dtReal * state.speed, available);
-      if (state.playT >= sc.tMax - 1e-9) setPlaying(false);
+      if (complete && state.playT >= available) setPlaying(false);
     }
     const buffering = state.playing && state.playT >= available && state.frames.length < state.totalFrames;
     status(buffering ? 'Computing the future…' : '');
@@ -164,8 +171,8 @@ function tick(now: number) {
 requestAnimationFrame(tick);
 
 function setPlaying(on: boolean) {
-  const sc = state.scenario;
-  if (on && state.playT >= sc.tMax - 1e-9) state.playT = 0;
+  const last = state.frames[state.frames.length - 1]?.t ?? 0;
+  if (on && state.frames.length === state.totalFrames && state.totalFrames > 1 && state.playT >= last) state.playT = 0;
   state.playing = on;
   $('play').textContent = on ? '❚❚' : '▶';
   $('play').setAttribute('aria-label', on ? 'Pause' : 'Play');

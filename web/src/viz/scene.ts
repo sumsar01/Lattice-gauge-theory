@@ -70,6 +70,12 @@ export class LatticeScene {
 
   private raycaster = new THREE.Raycaster();
   private hovered = -1;
+  private downAt = { x: 0, y: 0 };
+  private scratch = new THREE.Vector3();
+  private colorIdle = new THREE.Color(COLORS.linkIdle);
+  private colorHot = new THREE.Color(COLORS.field);
+  private colorSpark = new THREE.Color(COLORS.fieldHot);
+  private colorTmp = new THREE.Color();
   onSiteClick: ((site: number) => void) | null = null;
   onSiteHover: ((site: number, screen: { x: number; y: number } | null) => void) | null = null;
 
@@ -102,8 +108,14 @@ export class LatticeScene {
     this.scene.add(key);
 
     canvas.addEventListener('pointermove', (e) => this.pointer(e, false));
-    canvas.addEventListener('click', (e) => this.pointer(e, true));
-    canvas.addEventListener('pointerdown', () => (this.controls.autoRotate = false));
+    canvas.addEventListener('click', (e) => {
+      // a drag to orbit also ends in a click; only treat stationary clicks as picks
+      if (Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) < 5) this.pointer(e, true);
+    });
+    canvas.addEventListener('pointerdown', (e) => {
+      this.downAt = { x: e.clientX, y: e.clientY };
+      this.controls.autoRotate = false;
+    });
 
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
@@ -138,7 +150,6 @@ export class LatticeScene {
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
     this.composer.setSize(w, h);
-    this.bloom.setSize(w, h);
     this.camera.aspect = w / h;
     // keep the lattice in the space left free by the side panel and dock
     if (w > 860) this.camera.setViewOffset(w, h, -Math.min(200, w * 0.11), Math.min(60, h * 0.05), w, h);
@@ -156,16 +167,16 @@ export class LatticeScene {
   }
 
   /** Lattice coordinates -> world position. */
-  private map(u: number, v: number, lift = 0): THREE.Vector3 {
+  private map(u: number, v: number, lift = 0, out = new THREE.Vector3()): THREE.Vector3 {
     const L = this.lattice!;
     if (this.view === 'torus' && L.periodic) {
       const [R, r] = this.torusRadii();
       const th = (2 * Math.PI * u) / L.Lx;
       const ph = L.Ly > 1 ? (2 * Math.PI * v) / L.Ly + Math.PI / 2 : 0;
       const rr = r + lift;
-      return new THREE.Vector3((R + rr * Math.cos(ph)) * Math.cos(th), (R + rr * Math.cos(ph)) * Math.sin(th), rr * Math.sin(ph));
+      return out.set((R + rr * Math.cos(ph)) * Math.cos(th), (R + rr * Math.cos(ph)) * Math.sin(th), rr * Math.sin(ph));
     }
-    return new THREE.Vector3((u - (L.Lx - 1) / 2) * SPACING, (v - (L.Ly - 1) / 2) * SPACING, lift);
+    return out.set((u - (L.Lx - 1) / 2) * SPACING, (v - (L.Ly - 1) / 2) * SPACING, lift);
   }
 
   private linkSegments(l: number): Segment[] {
@@ -186,24 +197,25 @@ export class LatticeScene {
   }
 
   /** Point at fraction f in [0, 1] along a link's (possibly broken) path. */
-  private linkPoint(segs: Segment[], f: number): THREE.Vector3 {
+  private linkPoint(segs: Segment[], f: number, out?: THREE.Vector3): THREE.Vector3 {
     const seg = segs.length === 1 ? segs[0] : f < 0.5 ? segs[0] : segs[1];
     const g = segs.length === 1 ? f : f < 0.5 ? f * 2 : (f - 0.5) * 2;
-    return this.map(seg[0] + (seg[2] - seg[0]) * g, seg[1] + (seg[3] - seg[1]) * g);
+    return this.map(seg[0] + (seg[2] - seg[0]) * g, seg[1] + (seg[3] - seg[1]) * g, 0, out);
   }
 
   setLattice(L: Lattice, charges: Int8Array, view: ViewMode) {
+    const sameShape = this.lattice?.Lx === L.Lx && this.lattice.Ly === L.Ly && this.lattice.periodic === L.periodic;
     this.lattice = L;
     this.charges = charges;
     this.view = L.periodic ? view : 'flat';
-    this.obs = null;
-    this.rebuild();
+    if (!sameShape) this.obs = null;
+    this.rebuild(!sameShape);
   }
 
   setView(view: ViewMode) {
     if (!this.lattice) return;
     this.view = this.lattice.periodic ? view : 'flat';
-    this.rebuild();
+    this.rebuild(true);
   }
 
   private clear(group: THREE.Group) {
@@ -217,7 +229,7 @@ export class LatticeScene {
     group.clear();
   }
 
-  private rebuild() {
+  private rebuild(refit: boolean) {
     const L = this.lattice!;
     this.clear(this.root);
     this.clear(this.snapshotGroup);
@@ -280,6 +292,7 @@ export class LatticeScene {
     for (let p = 0; p < L.nPlaquettes; p++) {
       const s = L.plaquetteSite[p];
       const [u, v] = [s % L.Lx, Math.floor(s / L.Lx)];
+      const wraps = L.periodic && this.view === 'flat' && (u === L.Lx - 1 || v === L.Ly - 1);
       const n = 10;
       const inset = this.view === 'torus' ? 0.3 : 0.12;
       const pos: number[] = [];
@@ -308,6 +321,7 @@ export class LatticeScene {
           side: THREE.DoubleSide,
         }),
       );
+      mesh.visible = !wraps;
       this.root.add(mesh);
       this.plaquettes.push(mesh);
     }
@@ -330,7 +344,7 @@ export class LatticeScene {
       }),
     );
     this.root.add(this.sparks);
-    this.fitCamera();
+    if (refit) this.fitCamera();
   }
 
   private addStaticCharge(p: THREE.Vector3, q: number) {
@@ -402,8 +416,10 @@ export class LatticeScene {
       const e = snap.E[l];
       if (e === 0) continue;
       const segs = this.linkSegments(l);
-      const mid = this.linkPoint(segs, 0.5);
-      const ahead = this.linkPoint(segs, e > 0 ? 0.56 : 0.44);
+      // keep both points on one segment so wrapped links point the right way
+      const f = segs.length === 1 ? 0.5 : 0.25;
+      const mid = this.linkPoint(segs, f);
+      const ahead = this.linkPoint(segs, f + (e > 0 ? 0.06 : -0.06));
       const m = new THREE.Mesh(cone, new THREE.MeshBasicMaterial({ color: COLORS.fieldHot, transparent: true }));
       m.position.copy(mid);
       m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), ahead.sub(mid).normalize());
@@ -460,14 +476,12 @@ export class LatticeScene {
       m.children[1].rotation.y += dt * 1.2;
     }
 
-    const idle = new THREE.Color(COLORS.linkIdle);
-    const hot = new THREE.Color(COLORS.field);
-    const sparkColor = new THREE.Color(COLORS.fieldHot);
+    const sparkColor = this.colorSpark;
     for (let l = 0; l < L.nLinks; l++) {
       const E = obs ? obs.E[l] : 0;
       const E2 = obs ? obs.E2[l] : 0;
       const vis = this.links[l];
-      const c = idle.clone().lerp(hot, Math.min(1, E2));
+      const c = this.colorTmp.copy(this.colorIdle).lerp(this.colorHot, Math.min(1, E2));
       for (const t of vis.tubes) t.material.color.copy(c).multiplyScalar(0.35 + 0.75 * E2 * fade);
       const bright = Math.min(1, 0.12 * Math.sqrt(E2) + 0.8 * Math.abs(E)) * fade;
       for (let k = 0; k < SPARKS_PER_LINK; k++) {
@@ -475,11 +489,15 @@ export class LatticeScene {
         vis.phase[k] = (((vis.phase[k] + dt * 0.9 * E) % 1) + 1) % 1;
         const jitter = 0.03 * Math.sqrt(Math.max(0, E2 - E * E)) * Math.sin(time * 7 + k * 2.1 + l);
         const f = Math.min(0.97, Math.max(0.03, vis.phase[k] + jitter));
-        const p = this.linkPoint(vis.segments, f);
-        const i = l * SPARKS_PER_LINK + k;
-        this.sparkPos.set([p.x, p.y, p.z], 3 * i);
+        const p = this.linkPoint(vis.segments, f, this.scratch);
+        const i = 3 * (l * SPARKS_PER_LINK + k);
         const tail = 0.55 + 0.45 * Math.sin(Math.PI * f);
-        this.sparkCol.set([sparkColor.r * bright * tail, sparkColor.g * bright * tail, sparkColor.b * bright * tail], 3 * i);
+        this.sparkPos[i] = p.x;
+        this.sparkPos[i + 1] = p.y;
+        this.sparkPos[i + 2] = p.z;
+        this.sparkCol[i] = sparkColor.r * bright * tail;
+        this.sparkCol[i + 1] = sparkColor.g * bright * tail;
+        this.sparkCol[i + 2] = sparkColor.b * bright * tail;
       }
     }
     this.sparks.geometry.attributes.position.needsUpdate = true;

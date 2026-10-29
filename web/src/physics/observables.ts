@@ -133,6 +133,9 @@ export function stringState(basis: Basis, from: number, to: number): CVec {
 
 /** Draw one classical configuration from |psi|^2, as if we looked. */
 export function sample(basis: Basis, x: CVec, u: number): { E: Int8Array; ferm: number; probability: number } {
+  let total = 0;
+  for (let i = 0; i < 2 * basis.dim; i++) total += x[i] * x[i];
+  u *= total;
   let acc = 0;
   let idx = basis.dim - 1;
   for (let i = 0; i < basis.dim; i++) {

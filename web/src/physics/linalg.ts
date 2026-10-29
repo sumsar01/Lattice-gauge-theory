@@ -200,6 +200,13 @@ export function groundState(
  * x <- exp(-i H dt) x via a Krylov subspace of size m. Returns the
  * subspace error estimate (last beta times the last component).
  */
+const workspace: Float64Array[] = [];
+
+function workVector(k: number, n: number): Float64Array {
+  if (workspace[k]?.length !== n) workspace[k] = new Float64Array(n);
+  return workspace[k];
+}
+
 export function krylovStep(apply: MatVec, x: CVec, dt: number, m = 30): number {
   const n = x.length;
   const nx = norm(x);
@@ -207,9 +214,10 @@ export function krylovStep(apply: MatVec, x: CVec, dt: number, m = 30): number {
   const V: Float64Array[] = [];
   const alphas: number[] = [];
   const betas: number[] = [0];
-  let v = Float64Array.from(x);
+  let v = workVector(0, n);
+  v.set(x);
   scale(v, 1 / nx);
-  let w = new Float64Array(n);
+  let w = workVector(1, n);
   let lastBeta = 0;
   for (let k = 0; k < m; k++) {
     V.push(v);
@@ -235,7 +243,7 @@ export function krylovStep(apply: MatVec, x: CVec, dt: number, m = 30): number {
     betas.push(b);
     v = w;
     scale(v, 1 / b);
-    w = new Float64Array(n);
+    w = workVector(k + 2, n);
   }
 
   const k = alphas.length;

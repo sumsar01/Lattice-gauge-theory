@@ -15,6 +15,7 @@ let cachedKey = '';
 let cachedH: HamiltonianParts | null = null;
 let currentId = 0;
 let frames: CVec[] = [];
+let framesStride = 1;
 const rand = mulberry32(Date.now());
 
 function hamiltonianFor(req: RunRequest): HamiltonianParts {
@@ -28,8 +29,11 @@ function hamiltonianFor(req: RunRequest): HamiltonianParts {
   return cachedH;
 }
 
+let trial = new Float64Array(0);
+
 function evolve(apply: (x: CVec, y: CVec) => void, x: CVec, dt: number, depth = 0) {
-  const trial = x.slice();
+  if (trial.length !== x.length) trial = new Float64Array(x.length);
+  trial.set(x);
   const err = krylovStep(apply, trial, dt, 20);
   if (err < 1e-9 || depth > 6) {
     x.set(trial);
@@ -42,14 +46,21 @@ function evolve(apply: (x: CVec, y: CVec) => void, x: CVec, dt: number, depth = 
 const yieldToEvents = () => new Promise<void>((r) => setTimeout(r, 0));
 
 async function run(req: RunRequest) {
+  // let newer requests queued behind this one supersede it before the expensive part
+  await yieldToEvents();
+  if (currentId !== req.id) return;
   const t0 = performance.now();
+  frames = [];
   const H = hamiltonianFor(req);
   if (H.dim === 0) throw new Error('No allowed states: these static charges cannot be screened.');
   const p: Params = req.params;
   const apply = (x: CVec, y: CVec) => applyH(H, p, x, y);
 
   let x: CVec;
-  if (req.initial.kind === 'ground') x = groundState(apply, H.dim).state;
+  if (req.initial.kind === 'ground') {
+    x = groundState(apply, H.dim).state;
+    if (currentId !== req.id) return;
+  }
   else if (req.initial.kind === 'string') x = stringState(H.basis, req.initial.from, req.initial.to);
   else {
     const L = H.basis.lattice;
@@ -61,7 +72,6 @@ async function run(req: RunRequest) {
   const nFrames = req.tMax > 0 ? Math.round(req.tMax / req.dt) + 1 : 1;
   const keepStates = Math.floor(STATE_BUDGET_BYTES / (16 * H.dim));
   const stride = Math.max(1, Math.ceil(nFrames / Math.max(1, keepStates)));
-  frames = [];
   framesStride = stride;
   post({ type: 'ready', id: req.id, dim: H.dim, buildMs: performance.now() - t0, frames: nFrames });
 
@@ -80,7 +90,6 @@ async function run(req: RunRequest) {
   post({ type: 'done', id: req.id, ms: performance.now() - t0 });
 }
 
-let framesStride = 1;
 
 ctx.onmessage = async (ev: MessageEvent<Request>) => {
   const req = ev.data;
@@ -92,7 +101,7 @@ ctx.onmessage = async (ev: MessageEvent<Request>) => {
       post({ type: 'error', id: req.id, message: e instanceof Error ? e.message : String(e) });
     }
   } else if (req.type === 'sample' && cachedH) {
-    const k = Math.min(frames.length - 1, Math.floor(req.frame / framesStride));
+    const k = Math.min(frames.length - 1, Math.round(req.frame / framesStride));
     const x = frames[Math.max(0, k)];
     if (!x) return;
     const snapshots = Array.from({ length: req.count }, () => sample(cachedH!.basis, x, rand()));

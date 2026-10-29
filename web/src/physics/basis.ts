@@ -149,7 +149,8 @@ export function findState(basis: Basis, E: ArrayLike<number>, eOffset: number, f
     if (pair === 1 || pair === 2) k++;
   }
   const idx = start + rank;
-  return basis.ferm[idx] === f >>> 0 ? idx : -1;
+  if (idx >= basis.dim || basis.ferm[idx] !== f >>> 0) return -1;
+  return linkCode(basis.links, idx * nLinks, nLinks) === linkCode(E, eOffset, nLinks) ? idx : -1;
 }
 
 export const siteCharge = (f: number, s: number): number =>
